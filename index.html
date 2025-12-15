@@ -152,13 +152,32 @@
 
       chart = new Chart(ctx, {
         type: "line",
-        data: { datasets: [{ data: points, borderWidth: 3, pointRadius: 0, tension: mode === "line" ? 0.15 : 0 }] },
+        data: {
+          datasets: [{
+            data: points,
+            borderWidth: 3,
+            pointRadius: 0,
+            pointHitRadius: 12,
+            tension: mode === "line" ? 0.15 : 0
+          }]
+        },
         options: {
           parsing: false,
+          interaction: { mode: "nearest", intersect: false },
           plugins: {
             legend: { display: false },
             tooltip: {
-              callbacks: { label: (ctx) => " " + ctx.parsed.y.toLocaleString("fr-FR", {maximumFractionDigits:2}) + " %" }
+              enabled: true,
+              intersect: false,
+              callbacks: {
+                title: (items) => {
+                  const ts = items[0].parsed.x;
+                  const d = new Date(Number(ts));
+                  return d.toLocaleDateString("fr-FR");
+                },
+                label: (ctx) =>
+                  " " + ctx.parsed.y.toLocaleString("fr-FR", { maximumFractionDigits: 2 }) + " %"
+              }
             }
           },
           scales: {
@@ -258,7 +277,6 @@
       const dlg = document.getElementById("dlg");
       document.getElementById("btnClose").addEventListener("click", ()=> dlg.close());
 
-      // Fermer en cliquant "à côté" (backdrop)
       dlg.addEventListener("click", (e)=>{
         const rect = dlg.getBoundingClientRect();
         const inDialog = (rect.top <= e.clientY && e.clientY <= rect.bottom && rect.left <= e.clientX && e.clientX <= rect.right);
