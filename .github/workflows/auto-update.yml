@@ -2,7 +2,7 @@ name: Auto update rates
 
 on:
   schedule:
-    - cron: "0 6 * * 1"   # lundi 06:00 UTC (1 fois/semaine)
+    - cron: "0 6 * * 1"  # lundi 06:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -12,13 +12,29 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Debug tree
+        run: |
+          echo "=== PWD ==="
+          pwd
+          echo "=== ROOT FILES ==="
+          ls -la
+          echo "=== .github/workflows ==="
+          ls -la .github/workflows || true
+          echo "=== scripts ==="
+          ls -la scripts || true
+          echo "=== rates.json ==="
+          ls -la rates.json || true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - run: node scripts/update-rates.mjs
+      - name: Run updater
+        run: node scripts/update-rates.mjs
 
       - name: Commit & push if changed
         run: |
