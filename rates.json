@@ -1,0 +1,109 @@
+{
+  "updated_at": "2025-12-15",
+  "source": "Service-public / Banque de France (exemple — compléter l'historique 2000→aujourd'hui)",
+  "range_start": "2000-01-01",
+  "products": {
+    "livret_a": {
+      "id": "livret_a",
+      "name": "Livret A",
+      "ceiling_eur": 22950,
+      "current_rate": 0.017,
+      "current_since": "2025-08-01",
+      "history": [
+        {
+          "date": "2024-02-01",
+          "rate": 0.03
+        },
+        {
+          "date": "2025-08-01",
+          "rate": 0.017
+        }
+      ]
+    },
+    "ldds": {
+      "id": "ldds",
+      "name": "LDDS",
+      "ceiling_eur": 12000,
+      "current_rate": 0.017,
+      "current_since": "2025-08-01",
+      "name_history": [
+        {
+          "name": "CODEVI",
+          "from": "1983-01-01",
+          "to": "2007-12-31"
+        },
+        {
+          "name": "LDD",
+          "from": "2008-01-01",
+          "to": "2017-12-31"
+        },
+        {
+          "name": "LDDS",
+          "from": "2018-01-01",
+          "to": null
+        }
+      ],
+      "history": [
+        {
+          "date": "2024-02-01",
+          "rate": 0.03
+        },
+        {
+          "date": "2025-08-01",
+          "rate": 0.017
+        }
+      ]
+    },
+    "lep": {
+      "id": "lep",
+      "name": "LEP",
+      "ceiling_eur": 10000,
+      "current_rate": 0.027,
+      "current_since": "2025-08-01",
+      "history": [
+        {
+          "date": "2024-02-01",
+          "rate": 0.05
+        },
+        {
+          "date": "2025-08-01",
+          "rate": 0.027
+        }
+      ]
+    },
+    "cel": {
+      "id": "cel",
+      "name": "CEL",
+      "ceiling_eur": 15300,
+      "current_rate": 0.0125,
+      "current_since": "2025-08-01",
+      "history": [
+        {
+          "date": "2024-02-01",
+          "rate": 0.02
+        },
+        {
+          "date": "2025-08-01",
+          "rate": 0.0125
+        }
+      ]
+    },
+    "pel_new": {
+      "id": "pel_new",
+      "name": "PEL (ouverture aujourd’hui)",
+      "ceiling_eur": 61200,
+      "current_rate": 0.0175,
+      "current_since": "2025-01-01",
+      "history": [
+        {
+          "date": "2024-01-01",
+          "rate": 0.025
+        },
+        {
+          "date": "2025-01-01",
+          "rate": 0.0175
+        }
+      ]
+    }
+  }
+}

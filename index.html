@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Taux livrets réglementés</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <style>
+    :root { --r:18px; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; background:#f6f7fb; color:#111; }
+    header { padding:18px 16px 10px; display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
+    h1 { font-size:18px; margin:0; }
+    .muted { color:#666; font-size:12px; }
+    .grid { display:grid; gap:12px; padding:12px 16px 24px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .card { background:#fff; border-radius: var(--r); padding:14px; box-shadow: 0 10px 24px rgba(0,0,0,.06); border:1px solid rgba(0,0,0,.06); cursor:pointer; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .rate { font-weight:800; font-size:20px; }
+    .pill { font-size:12px; padding:6px 10px; border-radius: 999px; background: rgba(0,0,0,.05); }
+    .name { font-weight:750; }
+    .detail { font-size:12px; color:#666; margin-top:6px; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    dialog { width:min(920px, 96vw); border:none; border-radius: 22px; padding:0; box-shadow: 0 30px 90px rgba(0,0,0,.25); }
+    dialog::backdrop { background: rgba(0,0,0,.45); }
+    .modal { background:#fff; border-radius: 22px; overflow:hidden; }
+    .modalHeader { padding:14px 16px; border-bottom:1px solid rgba(0,0,0,.07); display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+    .modalHeader h2 { margin:0; font-size:16px; }
+    .modalBody { padding:14px 16px 18px; display:grid; gap:14px; }
+    .chips { display:flex; gap:8px; flex-wrap:wrap; }
+    .chip { border:1px solid rgba(0,0,0,.15); padding:6px 10px; border-radius: 999px; font-size:12px; cursor:pointer; user-select:none; }
+    .chip.active { background:#111; color:#fff; border-color:#111; }
+    .box { border:1px solid rgba(0,0,0,.08); border-radius: 18px; padding:12px; background:#fff; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; padding:10px 8px; border-bottom:1px solid rgba(0,0,0,.06); }
+    th { color:#555; font-weight:700; font-size:12px; }
+    .close { background:transparent; border:none; font-size:22px; cursor:pointer; line-height:1; }
+    .note { font-size:12px; color:#666; }
+    @media (max-width: 720px){
+      header { align-items:flex-start; flex-direction:column; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Livrets réglementés</h1>
+      <div class="muted" id="updated">Chargement…</div>
+    </div>
+    <div class="muted" id="source"></div>
+  </header>
+
+  <main class="grid" id="cards"></main>
+
+  <dialog id="dlg">
+    <div class="modal">
+      <div class="modalHeader">
+        <div>
+          <h2 id="dTitle"></h2>
+        </div>
+        <button class="close" id="btnClose" aria-label="Fermer">×</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="box">
+          <div class="row">
+            <div class="name" id="dName"></div>
+            <div class="pill" id="dCeiling"></div>
+          </div>
+          <div class="detail">
+            <div id="dCurrent"></div>
+            <div id="dSince"></div>
+          </div>
+          <div class="note" id="dNames"></div>
+        </div>
+
+        <div class="chips" id="chips">
+          <div class="chip active" data-range="all">Tout</div>
+          <div class="chip" data-range="10">10 ans</div>
+          <div class="chip" data-range="5">5 ans</div>
+        </div>
+
+        <div class="box">
+          <canvas id="chart" height="110"></canvas>
+          <div class="note">Graphique en escalier : paliers + sauts à la date de changement.</div>
+        </div>
+
+        <div class="box">
+          <div class="name">Tableau</div>
+          <div style="overflow:auto; margin-top:8px;">
+            <table>
+              <thead><tr><th>Date d’effet</th><th>Taux</th></tr></thead>
+              <tbody id="tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <script>
+    const RATES_URL = "./rates.json";
+
+    const fmtDate = (iso) => {
+      const d = new Date(iso + "T00:00:00");
+      return d.toLocaleDateString("fr-FR");
+    };
+    const fmtPct = (r) => (r*100).toLocaleString("fr-FR", { maximumFractionDigits: (r*100)%1===0 ? 0 : 2 }) + " %";
+    const fmtEur = (n) => (n).toLocaleString("fr-FR") + " €";
+
+    let DOC = null;
+    let chart = null;
+    let currentProduct = null;
+    let currentRange = "all";
+
+    function filterHistory(history, range){
+      if (!history || history.length === 0) return [];
+      if (range === "all") return history;
+      const years = Number(range);
+      const cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - years);
+      return history.filter(x => new Date(x.date + "T00:00:00") >= cutoff);
+    }
+
+    function buildStepSeries(changes){
+      if (!changes || changes.length === 0) return {labels:[], data:[]};
+      const sorted = [...changes].sort((a,b)=> a.date.localeCompare(b.date));
+      const labels = [];
+      const data = [];
+      labels.push(sorted[0].date);
+      data.push(sorted[0].rate);
+
+      for (let i=1;i<sorted.length;i++){
+        const prev = sorted[i-1];
+        const curr = sorted[i];
+        labels.push(curr.date);
+        data.push(prev.rate);
+        labels.push(curr.date);
+        data.push(curr.rate);
+      }
+      return {labels, data};
+    }
+
+    function setActiveChip(range){
+      currentRange = range;
+      document.querySelectorAll(".chip").forEach(c=>{
+        c.classList.toggle("active", c.dataset.range === range);
+      });
+    }
+
+    function renderChart(product){
+      const history = filterHistory(product.history, currentRange);
+      const {labels, data} = buildStepSeries(history);
+      const ctx = document.getElementById("chart");
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels.map(d => fmtDate(d)),
+          datasets: [{
+            data: data.map(x => x*100),
+            borderWidth: 3,
+            pointRadius: 0,
+            tension: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => " " + ctx.parsed.y.toLocaleString("fr-FR", {maximumFractionDigits:2}) + " %"
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { maxTicksLimit: 8 } },
+            y: { ticks: { callback: (v)=> v.toLocaleString("fr-FR") + "%" } }
+          }
+        }
+      });
+    }
+
+    function renderTable(product){
+      const history = filterHistory(product.history, currentRange);
+      const rows = [...history].sort((a,b)=> b.date.localeCompare(a.date));
+      const tbody = document.getElementById("tbody");
+      tbody.innerHTML = rows.map(r=>`
+        <tr>
+          <td>${fmtDate(r.date)}</td>
+          <td><b>${fmtPct(r.rate)}</b></td>
+        </tr>
+      `).join("");
+    }
+
+    function openDetail(product){
+      currentProduct = product;
+      document.getElementById("dTitle").textContent = product.name;
+      document.getElementById("dName").textContent = product.name;
+      document.getElementById("dCeiling").textContent = "Plafond : " + fmtEur(product.ceiling_eur);
+      document.getElementById("dCurrent").textContent = "Taux actuel : " + fmtPct(product.current_rate);
+      document.getElementById("dSince").textContent = "En vigueur depuis : " + fmtDate(product.current_since);
+
+      const names = (product.name_history && product.name_history.length)
+        ? "Anciens noms : " + product.name_history.map(p=>{
+            const to = p.to ? p.to.slice(0,4) : "…";
+            return `${p.name} (${p.from.slice(0,4)}–${to})`;
+          }).join(" • ")
+        : "";
+      document.getElementById("dNames").textContent = names;
+
+      setActiveChip("all");
+      renderChart(product);
+      renderTable(product);
+      document.getElementById("dlg").showModal();
+    }
+
+    function renderCards(doc){
+      const cards = document.getElementById("cards");
+      cards.innerHTML = "";
+      const order = ["livret_a","ldds","lep","cel","pel_new"];
+      order.forEach(id=>{
+        const p = doc.products[id];
+        if(!p) return;
+        const div = document.createElement("div");
+        div.className = "card";
+        div.innerHTML = `
+          <div class="row">
+            <div class="name">${p.name}</div>
+            <div class="rate">${fmtPct(p.current_rate)}</div>
+          </div>
+          <div class="detail">
+            <span>Plafond : ${fmtEur(p.ceiling_eur)}</span>
+            <span>Depuis : ${fmtDate(p.current_since)}</span>
+          </div>
+        `;
+        div.addEventListener("click", ()=> openDetail(p));
+        cards.appendChild(div);
+      });
+    }
+
+    async function init(){
+      const resp = await fetch(RATES_URL, { cache: "no-store" });
+      if(!resp.ok) throw new Error("Impossible de charger rates.json");
+      DOC = await resp.json();
+      document.getElementById("updated").textContent = "Mis à jour le " + fmtDate(DOC.updated_at);
+      document.getElementById("source").textContent = DOC.source ? ("Source : " + DOC.source) : "";
+      renderCards(DOC);
+
+      document.getElementById("btnClose").addEventListener("click", ()=> document.getElementById("dlg").close());
+      document.getElementById("chips").addEventListener("click", (e)=>{
+        const chip = e.target.closest(".chip");
+        if(!chip || !currentProduct) return;
+        setActiveChip(chip.dataset.range);
+        renderChart(currentProduct);
+        renderTable(currentProduct);
+      });
+    }
+
+    init().catch(err=>{
+      document.getElementById("updated").textContent = "Erreur : " + err.message;
+    });
+  </script>
+</body>
+</html>
