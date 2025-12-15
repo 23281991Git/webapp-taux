@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Livrets réglementés</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f6f7fb}
+    header{padding:16px}
+    .grid{display:grid;gap:12px;padding:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+    .card{background:#fff;border-radius:16px;padding:14px;cursor:pointer;box-shadow:0 8px 20px rgba(0,0,0,.06)}
+    .row{display:flex;justify-content:space-between;align-items:center}
+    .rate{font-size:20px;font-weight:800}
+    dialog{width:min(900px,96vw);border:none;border-radius:20px}
+    .box{background:#fff;border-radius:16px;padding:12px;margin-bottom:12px}
+    .chip{border:1px solid #ccc;border-radius:999px;padding:6px 10px;font-size:12px;cursor:pointer}
+    .chip.active{background:#000;color:#fff}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:8px;border-bottom:1px solid #eee;text-align:left}
+  </style>
+</head>
+
+<body>
+<header>
+  <h2>Livrets réglementés</h2>
+  <div id="updated"></div>
+</header>
+
+<main class="grid" id="cards"></main>
+
+<dialog id="dlg">
+  <div class="box">
+    <h3 id="dTitle"></h3>
+    <div id="dMeta"></div>
+  </div>
+
+  <div class="box">
+    <div id="chips">
+      <span class="chip active" data-range="all">Tout</span>
+      <span class="chip" data-range="10">10 ans</span>
+      <span class="chip" data-range="5">5 ans</span>
+    </div>
+  </div>
+
+  <div class="box">
+    <canvas id="chart" height="120"></canvas>
+  </div>
+
+  <div class="box">
+    <table>
+      <thead><tr><th>Date</th><th>Taux</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</dialog>
+
+<script>
+const DATA_URL = "./rates.json";
+let DATA, chart, current, range="all";
+
+const fmtDate = d => new Date(d).toLocaleDateString("fr-FR");
+const fmtPct = r => (r*100).toLocaleString("fr-FR")+" %";
+
+function filterHistory(h){
+  if(range==="all") return h;
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear()-Number(range));
+  return h.filter(x=>new Date(x.date)>=cutoff);
+}
+
+function buildSteps(history){
+  const pts=[];
+  const toX=d=>new Date(d).getTime();
+  pts.push({x:toX(history[0].date),y:history[0].rate*100});
+  for(let i=1;i<history.length;i++){
+    pts.push({x:toX(history[i].date),y:history[i-1].rate*100});
+    pts.push({x:toX(history[i].date),y:history[i].rate*100});
+  }
+  return pts;
+}
+
+function renderChart(){
+  const hist = filterHistory(current.history);
+  const pts = buildSteps(hist);
+  if(chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"),{
+    type:"line",
+    data:{datasets:[{data:pts,borderWidth:3,pointRadius:0,tension:0}]},
+    options:{
+      parsing:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{type:"linear",ticks:{callback:v=>fmtDate(v)}},
+        y:{grace:"15%",ticks:{callback:v=>v+"%"}}
+      }
+    }
+  });
+}
+
+function renderTable(){
+  const rows = filterHistory(current.history).slice().reverse();
+  document.getElementById("tbody").innerHTML =
+    rows.map(r=>`<tr><td>${fmtDate(r.date)}</td><td><b>${fmtPct(r.rate)}</b></td></tr>`).join("");
+}
+
+function openProduct(p){
+  current=p;
+  document.getElementById("dTitle").textContent=p.name;
+  document.getElementById("dMeta").textContent=`Taux actuel ${fmtPct(p.current_rate)} • Plafond ${p.ceiling_eur.toLocaleString("fr-FR")} €`;
+  range="all";
+  document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("active",c.dataset.range==="all"));
+  renderChart(); renderTable();
+  dlg.showModal();
+}
+
+fetch(DATA_URL).then(r=>r.json()).then(j=>{
+  DATA=j;
+  document.getElementById("updated").textContent="Mis à jour le "+fmtDate(j.updated_at);
+  const cards=document.getElementById("cards");
+  Object.values(j.products).forEach(p=>{
+    const d=document.createElement("div");
+    d.className="card";
+    d.innerHTML=`<div class="row"><b>${p.name}</b><span class="rate">${fmtPct(p.current_rate)}</span></div>`;
+    d.onclick=()=>openProduct(p);
+    cards.appendChild(d);
+  });
+});
+
+chips.onclick=e=>{
+  if(!e.target.dataset.range) return;
+  range=e.target.dataset.range;
+  document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("active",c===e.target));
+  renderChart(); renderTable();
+};
+</script>
+</body>
+</html>
