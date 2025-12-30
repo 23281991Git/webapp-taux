@@ -104,4 +104,4 @@ async function main() {
   const rates = Object.fromEntries(pages);
 
   // 2) Appliquer uniquement si changement
-  if (p.livret_a.current_rate !== rates.livret_a) upsertStep(p.livret_a, todayISO, rates.livret_a)_
+  if (p.livret_a.current_rate !== rates.livret_a) upsertStep(p.livret_a, todayISO, rates.livret_a)
