@@ -2,7 +2,7 @@ import fs from "node:fs";
 
 const RATES_PATH = "rates.json";
 
-// Sources Service-Public (fiches “vosdroits”)
+// Fiches Service-Public (une par produit)
 const URLS = {
   livret_a: "https://www.service-public.gouv.fr/particuliers/vosdroits/F2365",
   ldds: "https://www.service-public.gouv.fr/particuliers/vosdroits/F2368",
@@ -11,12 +11,13 @@ const URLS = {
   pel_new: "https://www.service-public.gouv.fr/particuliers/vosdroits/F16140",
 };
 
+// ---------- HTTP ----------
 async function fetchText(url) {
   const r = await fetch(url, {
     headers: {
       "user-agent":
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "accept-language": "fr-FR,fr;q=0.9,en;q=0.8",
       "cache-control": "no-cache",
       pragma: "no-cache",
@@ -26,19 +27,25 @@ async function fetchText(url) {
   return await r.text();
 }
 
+// ---------- parsing helpers ----------
 function stripTags(html) {
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
     .replace(/<\/?[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&apos;|&#39;|&#039;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function parsePctFromText(text) {
-  const m = text.match(/(\d+(?:[.,]\d+)?)\s*%/);
-  if (!m) throw new Error("Percent not found");
-  return Number(m[1].replace(",", ".")) / 100;
+function rateFromMatch(m) {
+  if (!m || !m[1]) throw new Error("Percent not found");
+  return Number(String(m[1]).replace(",", ".")) / 100;
 }
 
 function assertReasonableRate(id, rate) {
@@ -53,7 +60,7 @@ function upsertStep(product, dateISO, rate) {
   const last = h[h.length - 1];
 
   if (!last || last.date !== dateISO) {
-    if (last && Math.abs(last.rate - rate) < 1e-12) return;
+    if (last && Math.abs(last.rate - rate) < 1e-12) return; // pas de doublon si même taux
     h.push({ date: dateISO, rate });
   } else {
     last.rate = rate;
@@ -61,22 +68,59 @@ function upsertStep(product, dateISO, rate) {
   product.history = h;
 }
 
-function extractRateFromServicePublicPage(html, idForError) {
-  const text = stripTags(html).toLowerCase();
+// Regex ciblées (beaucoup plus robustes que “fenêtre après mot-clé”)
+const PATTERNS = {
+  livret_a: [
+    /taux d['’]int[eé]r[eê]t annuel[^.]{0,120}?livret a[^.]{0,120}?est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /le taux d['’]int[eé]r[eê]t annuel du livret a est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+  ],
+  ldds: [
+    /taux d['’]int[eé]r[eê]t annuel[^.]{0,160}?(ldds|livret d['’]epargne populaire|livret de d[eé]veloppement durable et solidaire)[^.]{0,160}?est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /le taux d['’]int[eé]r[eê]t annuel du ldds est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /ldds[^.]{0,120}?taux[^.]{0,120}?([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+  ],
+  lep: [
+    /taux d['’]int[eé]r[eê]t annuel[^.]{0,160}?(lep|livret d['’]epargne populaire)[^.]{0,160}?est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /le taux d['’]int[eé]r[eê]t annuel du lep est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /lep[^.]{0,120}?taux[^.]{0,120}?([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+  ],
+  cel: [
+    /taux d['’]int[eé]r[eê]t annuel[^.]{0,160}?(cel|compte [eé]pargne logement)[^.]{0,160}?est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /le taux d['’]int[eé]r[eê]t annuel du cel est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /cel[^.]{0,120}?taux[^.]{0,120}?([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+  ],
+  pel_new: [
+    /taux d['’]int[eé]r[eê]t annuel[^.]{0,220}?(pel|plan [d'’]?[eé]pargne logement)[^.]{0,220}?est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /le taux d['’]int[eé]r[eê]t annuel du pel est (?:fix[eé]|de)\s*([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    /pel[^.]{0,120}?taux[^.]{0,120}?([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+  ],
+};
 
-  const idx1 = text.indexOf("taux d'intérêt");
-  if (idx1 !== -1) {
-    const window = text.slice(idx1, idx1 + 900);
-    return parsePctFromText(window);
+function extractRateForId(id, html) {
+  const text = stripTags(html);
+
+  const patterns = PATTERNS[id];
+  if (!patterns) throw new Error(`No patterns for id=${id}`);
+
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m) {
+      // certains patterns ont 2 groupes (ex: (lep|...) + (taux))
+      const val = m[2] ?? m[1];
+      return rateFromMatch([null, val]);
+    }
   }
 
-  const idx2 = text.indexOf("taux d interet");
-  if (idx2 !== -1) {
-    const window = text.slice(idx2, idx2 + 900);
-    return parsePctFromText(window);
+  // Fallback (moins précis) : prendre le 1er % après “taux d’intérêt” sur une grande fenêtre
+  const lower = text.toLowerCase();
+  const idx = lower.indexOf("taux d'intérêt");
+  if (idx !== -1) {
+    const window = text.slice(idx, idx + 2500);
+    const m = window.match(/(\d+(?:[.,]\d+)?)\s*%/);
+    if (m) return rateFromMatch(m);
   }
 
-  throw new Error(`${idForError}: keyword "taux d'intérêt" not found`);
+  throw new Error(`Percent not found for ${id}`);
 }
 
 async function main() {
@@ -88,7 +132,7 @@ async function main() {
   const entries = await Promise.all(
     Object.entries(URLS).map(async ([id, url]) => {
       const html = await fetchText(url);
-      const rate = extractRateFromServicePublicPage(html, id);
+      const rate = extractRateForId(id, html);
       assertReasonableRate(id, rate);
       return [id, rate];
     })
@@ -118,5 +162,5 @@ async function main() {
 main().catch((err) => {
   console.error("UPDATE FAILED:");
   console.error(err && err.stack ? err.stack : err);
-  process.exit(1);
+  process.exit(1); // échec => mail GitHub
 });
