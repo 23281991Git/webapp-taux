@@ -11,11 +11,9 @@ const URLS = {
   pel_new: "https://www.service-public.gouv.fr/particuliers/vosdroits/F16140",
 };
 
-// ---------- HTTP ----------
 async function fetchText(url) {
   const r = await fetch(url, {
     headers: {
-      // User-Agent crédible (réduit les refus “bêtes”)
       "user-agent":
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
       "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -28,7 +26,6 @@ async function fetchText(url) {
   return await r.text();
 }
 
-// ---------- parsing ----------
 function stripTags(html) {
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
@@ -39,7 +36,6 @@ function stripTags(html) {
 }
 
 function parsePctFromText(text) {
-  // "1,7 %" / "1.7 %" / "1,75%" => 0.017
   const m = text.match(/(\d+(?:[.,]\d+)?)\s*%/);
   if (!m) throw new Error("Percent not found");
   return Number(m[1].replace(",", ".")) / 100;
@@ -56,7 +52,6 @@ function upsertStep(product, dateISO, rate) {
   const h = product.history ?? [];
   const last = h[h.length - 1];
 
-  // anti-doublon
   if (!last || last.date !== dateISO) {
     if (last && Math.abs(last.rate - rate) < 1e-12) return;
     h.push({ date: dateISO, rate });
@@ -69,20 +64,19 @@ function upsertStep(product, dateISO, rate) {
 function extractRateFromServicePublicPage(html, idForError) {
   const text = stripTags(html).toLowerCase();
 
-  // Stratégie :
-  // 1) chercher un bloc autour de “taux d'intérêt” (le libellé existe sur les fiches)
-  // 2) prendre la 1ère occurrence de % dans une fenêtre courte (évite de choper un autre % plus loin)
-  const keyIdx = text.indexOf("taux d'intérêt");
-  if (keyIdx === -1) {
-    // fallback : parfois “taux d'intérêt du ... est de”
-    const keyIdx2 = text.indexOf("taux d'intérêt du");
-    if (keyIdx2 === -1) throw new Error(`${idForError}: keyword "taux d'intérêt" not found`);
-    const window2 = text.slice(keyIdx2, keyIdx2 + 800);
-    return parsePctFromText(window2);
+  const idx1 = text.indexOf("taux d'intérêt");
+  if (idx1 !== -1) {
+    const window = text.slice(idx1, idx1 + 900);
+    return parsePctFromText(window);
   }
 
-  const window = text.slice(keyIdx, keyIdx + 800);
-  return parsePctFromText(window);
+  const idx2 = text.indexOf("taux d interet");
+  if (idx2 !== -1) {
+    const window = text.slice(idx2, idx2 + 900);
+    return parsePctFromText(window);
+  }
+
+  throw new Error(`${idForError}: keyword "taux d'intérêt" not found`);
 }
 
 async function main() {
@@ -91,8 +85,7 @@ async function main() {
 
   const todayISO = new Date().toISOString().slice(0, 10);
 
-  // 1) Fetch + parse chaque produit sur sa fiche dédiée (stable, pas de 403 type economie.gouv)
-  const pages = await Promise.all(
+  const entries = await Promise.all(
     Object.entries(URLS).map(async ([id, url]) => {
       const html = await fetchText(url);
       const rate = extractRateFromServicePublicPage(html, id);
@@ -101,7 +94,29 @@ async function main() {
     })
   );
 
-  const rates = Object.fromEntries(pages);
+  const rates = Object.fromEntries(entries);
 
-  // 2) Appliquer uniquement si changement
-  if (p.livret_a.current_rate !== rates.livret_a) upsertStep(p.livret_a, todayISO, rates.livret_a)
+  if (p.livret_a.current_rate !== rates.livret_a) upsertStep(p.livret_a, todayISO, rates.livret_a);
+  if (p.ldds.current_rate !== rates.ldds) upsertStep(p.ldds, todayISO, rates.ldds);
+  if (p.lep.current_rate !== rates.lep) upsertStep(p.lep, todayISO, rates.lep);
+  if (p.cel.current_rate !== rates.cel) upsertStep(p.cel, todayISO, rates.cel);
+  if (p.pel_new.current_rate !== rates.pel_new) upsertStep(p.pel_new, todayISO, rates.pel_new);
+
+  doc.updated_at = todayISO;
+  fs.writeFileSync(RATES_PATH, JSON.stringify(doc, null, 2) + "\n", "utf-8");
+
+  console.log("OK: rates fetched from Service-Public");
+  console.log(
+    "A:", rates.livret_a,
+    "LDDS:", rates.ldds,
+    "LEP:", rates.lep,
+    "CEL:", rates.cel,
+    "PEL:", rates.pel_new
+  );
+}
+
+main().catch((err) => {
+  console.error("UPDATE FAILED:");
+  console.error(err && err.stack ? err.stack : err);
+  process.exit(1);
+});
