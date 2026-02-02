@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-01-26",
+  "updated_at": "2026-02-02",
   "source": "Livret A/LDDS: Magnolia; LEP: Wikipédia & BdF Webstat; CEL/PEL: LaFinancePourTous; Inflation: INSEE (moyenne annuelle)",
   "range_start": "2000-01-01",
   "products": {
@@ -7,8 +7,8 @@
       "id": "livret_a",
       "name": "Livret A",
       "ceiling_eur": 22950,
-      "current_rate": 0.017,
-      "current_since": "2025-08-01",
+      "current_rate": 0.015,
+      "current_since": "2026-02-02",
       "chart_mode": "step",
       "history": [
         {
@@ -130,6 +130,10 @@
         {
           "date": "2025-08-01",
           "rate": 0.017
+        },
+        {
+          "date": "2026-02-02",
+          "rate": 0.015
         }
       ]
     },
@@ -137,8 +141,8 @@
       "id": "ldds",
       "name": "LDDS",
       "ceiling_eur": 12000,
-      "current_rate": 0.017,
-      "current_since": "2025-08-01",
+      "current_rate": 0.015,
+      "current_since": "2026-02-02",
       "chart_mode": "step",
       "name_history": [
         {
@@ -277,6 +281,10 @@
         {
           "date": "2025-08-01",
           "rate": 0.017
+        },
+        {
+          "date": "2026-02-02",
+          "rate": 0.015
         }
       ]
     },
@@ -284,8 +292,8 @@
       "id": "lep",
       "name": "LEP",
       "ceiling_eur": 10000,
-      "current_rate": 0.027000000000000003,
-      "current_since": "2025-12-30",
+      "current_rate": 0.025,
+      "current_since": "2026-02-02",
       "chart_mode": "step",
       "history": [
         {
@@ -403,6 +411,10 @@
         {
           "date": "2025-08-01",
           "rate": 0.027
+        },
+        {
+          "date": "2026-02-02",
+          "rate": 0.025
         }
       ]
     },
@@ -410,8 +422,8 @@
       "id": "cel",
       "name": "CEL",
       "ceiling_eur": 15300,
-      "current_rate": 0.0125,
-      "current_since": "2025-08-01",
+      "current_rate": 0.01,
+      "current_since": "2026-02-02",
       "chart_mode": "step",
       "history": [
         {
@@ -501,6 +513,10 @@
         {
           "date": "2025-08-01",
           "rate": 0.0125
+        },
+        {
+          "date": "2026-02-02",
+          "rate": 0.01
         }
       ]
     },
